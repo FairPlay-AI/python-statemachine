@@ -42,9 +42,9 @@ class AsyncSignals(Signals):
         self.answered.append(due)
 
 
-@pytest.fixture()
+@pytest.fixture(autouse=True)
 def clock(monkeypatch):
-    """A monotonic clock that moves only when the test moves it."""
+    """Run every test here on a monotonic clock that moves only when the test moves it."""
     now = [1000.0]
     for module in _CLOCKS:
         monkeypatch.setattr(f"{module}.monotonic", lambda: now[0])
@@ -56,7 +56,7 @@ def signal(sm, due, send_id=None):
     return BoundEvent(id="signal", name="Signal", delay=due, _sm=sm).put(send_id=send_id, due=due)
 
 
-def test_the_clock_fixture_moves_every_clock_the_engines_read(clock):
+def test_every_engine_reads_the_test_clock(clock):
     modules = (event_data, sync, async_)
     assert [module.monotonic() for module in modules] == [1000.0, 1000.0, 1000.0]
 
@@ -75,7 +75,7 @@ def test_the_clock_fixture_moves_every_clock_the_engines_read(clock):
         pytest.param("s9", id="last-queued"),
     ],
 )
-async def test_cancelling_a_delayed_event_keeps_the_rest_in_due_order(sm_runner, clock, cancelled):
+async def test_cancelling_a_delayed_event_keeps_the_rest_in_due_order(sm_runner, cancelled, clock):
     sm = await sm_runner.start(Signals)
     delays = [10, 50, 20, 60, 70, 30, 40, 80, 90, 15]
     for number, delay in enumerate(delays):
@@ -154,14 +154,14 @@ async def test_a_cancel_with_nothing_queued_does_not_cancel_what_is_sent_later(s
         pytest.param("dawn", "dawn\n", id="newline"),
         pytest.param("dawn\r\n", "dawn\n", id="crlf-and-lf"),
         pytest.param("dawn", "Dawn", id="case"),
-        pytest.param("dawn", "dawn​", id="zero-width-space"),
-        pytest.param("dawn", "﻿dawn", id="byte-order-mark"),
+        pytest.param("dawn", "dawn\u200b", id="zero-width-space"),
+        pytest.param("dawn", "\ufeffdawn", id="byte-order-mark"),
         pytest.param("da\0wn", "da", id="up-to-a-nul"),
-        pytest.param("café", "café", id="composed-and-decomposed"),
+        pytest.param("caf\u00e9", "cafe\u0301", id="composed-and-decomposed"),
     ],
 )
 async def test_a_send_id_cancels_only_events_sent_with_exactly_that_id(
-    sm_runner, clock, sent, cancelled
+    sm_runner, sent, cancelled, clock
 ):
     sm = await sm_runner.start(Signals)
     signal(sm, 10, sent)
@@ -181,7 +181,7 @@ async def test_a_send_id_cancels_only_events_sent_with_exactly_that_id(
         pytest.param(" ", id="space"),
         pytest.param("dawn\n", id="newline"),
         pytest.param("da\0wn", id="nul"),
-        pytest.param("café", id="decomposed"),
+        pytest.param("cafe\u0301", id="decomposed"),
         pytest.param("\U0001f525", id="astral"),
         pytest.param("\u6681", id="cjk"),
         pytest.param("\u202edawn", id="right-to-left-override"),
@@ -192,7 +192,7 @@ async def test_a_send_id_cancels_only_events_sent_with_exactly_that_id(
         pytest.param("x" * 2048, id="2048-characters"),
     ],
 )
-async def test_any_string_is_a_send_id_that_cancels_only_its_own_events(sm_runner, clock, send_id):
+async def test_any_string_is_a_send_id_that_cancels_only_its_own_events(sm_runner, send_id, clock):
     sm = await sm_runner.start(Signals)
     signal(sm, 10, send_id)
     signal(sm, 20)
@@ -229,7 +229,7 @@ async def test_an_event_can_be_cancelled_from_a_callback(sm_runner, clock):
 
 
 @pytest.mark.timeout(10)
-async def test_the_loop_never_waits_for_a_cancelled_event(sm_runner, clock, monkeypatch):
+async def test_the_loop_never_waits_for_a_cancelled_event(sm_runner, monkeypatch):
     sm = await sm_runner.start(Signals)
     dawn = signal(sm, 10, "dawn")
     sm.cancel_event("dawn")
@@ -270,7 +270,7 @@ def settled(future):
 
 @pytest.mark.timeout(10)
 @pytest.mark.parametrize("cancels", [1, 2])
-async def test_a_caller_awaiting_a_cancelled_event_gets_none(clock, cancels):
+async def test_a_caller_awaiting_a_cancelled_event_gets_none(cancels, clock):
     sm = AsyncSignals()
     await sm.activate_initial_state()
     holding, waiting, dawn = await awaiting(sm)
@@ -294,7 +294,7 @@ async def test_a_caller_awaiting_a_cancelled_event_gets_none(clock, cancels):
     ],
 )
 async def test_a_caller_that_stops_waiting_leaves_its_event_cancellable(
-    clock, started, settled_as
+    started, settled_as, clock
 ):
     sm = AsyncSignals()
     await sm.activate_initial_state()

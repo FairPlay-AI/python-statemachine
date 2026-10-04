@@ -32,14 +32,13 @@ class Muster(StateChart):
         self.answered.append(rider)
 
 
-@pytest.fixture()
-def one_moment(monkeypatch):
-    """Stamp every trigger with the same time."""
+@pytest.fixture(autouse=True)
+def stamped_alike(monkeypatch):
+    """Stamp every trigger in these tests with the same time."""
     monkeypatch.setattr("statemachine.event_data.monotonic", lambda: 1000.0)
 
 
 @pytest.mark.timeout(10)
-@pytest.mark.usefixtures("one_moment")
 @pytest.mark.parametrize("riders", [0, 1, 2, 20])
 class TestEventsDueTogether:
     async def test_internal_events_run_in_the_order_raised(self, sm_runner, riders):

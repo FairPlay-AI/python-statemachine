@@ -24,8 +24,8 @@ class Muster(StateChart):
         self.answered = []
         super().__init__(*args, **kwargs)
 
-    def call_riders(self):
-        for rider in range(20):
+    def call_riders(self, riders):
+        for rider in range(riders):
             BoundEvent(id="ride", name="Ride", internal=True, _sm=self).put(rider=rider)
 
     def answer(self, rider):
@@ -40,19 +40,20 @@ def one_moment(monkeypatch):
 
 @pytest.mark.timeout(10)
 @pytest.mark.usefixtures("one_moment")
+@pytest.mark.parametrize("riders", [0, 1, 2, 20])
 class TestEventsDueTogether:
-    async def test_internal_events_run_in_the_order_raised(self, sm_runner):
+    async def test_internal_events_run_in_the_order_raised(self, sm_runner, riders):
         sm = await sm_runner.start(Muster)
 
-        await sm_runner.send(sm, "call")
+        await sm_runner.send(sm, "call", riders=riders)
 
-        assert sm.answered == list(range(20))
+        assert sm.answered == list(range(riders))
 
-    async def test_external_events_run_in_the_order_sent(self, sm_runner):
+    async def test_external_events_run_in_the_order_sent(self, sm_runner, riders):
         sm = await sm_runner.start(Muster)
-        for rider in range(20):
+        for rider in range(riders):
             BoundEvent(id="ride", name="Ride", _sm=sm).put(rider=rider)
 
         await sm_runner.processing_loop(sm)
 
-        assert sm.answered == list(range(20))
+        assert sm.answered == list(range(riders))

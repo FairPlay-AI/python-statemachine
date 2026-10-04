@@ -8,13 +8,19 @@ Theme: Beacons of Gondor — signal fires propagate with timing.
 """
 
 import asyncio
+import time
 
 import pytest
+from statemachine.engines import async_
+from statemachine.engines import sync
 from statemachine.event import BoundEvent
 
 from statemachine import Event
 from statemachine import State
 from statemachine import StateChart
+from statemachine import event_data
+
+_CLOCKS = ("statemachine.event_data", "statemachine.engines.sync", "statemachine.engines.async_")
 
 
 @pytest.mark.timeout(10)
@@ -103,7 +109,7 @@ class TestDelayedEvents:
 
         The trigger is stamped and checked on the same monotonic clock: here a fake one that
         moves only when the test moves it. A stamp on one clock checked against another would
-        hold the beacon unlit.
+        hold the beacon unlit, and the wall clock fails the test if anything reads it.
         """
 
         class BeaconsOfGondor(StateChart):
@@ -112,13 +118,14 @@ class TestDelayedEvents:
 
             light = dark.to(lit)
 
+        def wall_clock():
+            raise AssertionError("a trigger was stamped or checked on the wall clock")
+
+        monkeypatch.setattr("time.time", wall_clock)
         now = [1000.0]
-        for module in (
-            "statemachine.event_data",
-            "statemachine.engines.sync",
-            "statemachine.engines.async_",
-        ):
+        for module in _CLOCKS:
             monkeypatch.setattr(f"{module}.monotonic", lambda: now[0])
+            monkeypatch.setattr(f"{module}.time", wall_clock, raising=False)
         sm = await sm_runner.start(BeaconsOfGondor)
         BoundEvent(id="light", name="Light", delay=50, _sm=sm).put()
         now[0] += 0.05
@@ -126,3 +133,34 @@ class TestDelayedEvents:
         await sm_runner.processing_loop(sm)
 
         assert "lit" in sm.configuration_values
+
+    def test_triggers_are_stamped_and_checked_on_the_monotonic_clock(self):
+        clocks = (event_data.monotonic, sync.monotonic, async_.monotonic)
+
+        assert clocks == (time.monotonic, time.monotonic, time.monotonic)
+
+    @pytest.mark.parametrize(
+        ("delay", "due"),
+        [
+            pytest.param(None, 1000.0, id="none"),
+            pytest.param(0, 1000.0, id="zero"),
+            pytest.param(1, 1000.001, id="one-millisecond"),
+            pytest.param(50, 1000.05, id="fifty-milliseconds"),
+            pytest.param(-50, 999.95, id="negative-already-due"),
+        ],
+    )
+    def test_a_delay_in_milliseconds_comes_due_that_many_thousandths_later(
+        self, monkeypatch, delay, due
+    ):
+        class BeaconsOfGondor(StateChart):
+            dark = State(initial=True)
+            lit = State(final=True)
+
+            light = dark.to(lit)
+
+        monkeypatch.setattr("statemachine.event_data.monotonic", lambda: 1000.0)
+        sm = BeaconsOfGondor()
+
+        trigger = BoundEvent(id="light", name="Light", delay=delay, _sm=sm).put()
+
+        assert trigger.execution_time == pytest.approx(due, abs=1e-9)

@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from dataclasses import field
+from itertools import count
 from time import time
 from typing import TYPE_CHECKING
 from typing import Any
@@ -9,6 +10,9 @@ if TYPE_CHECKING:
     from .state import State
     from .statemachine import StateChart
     from .transition import Transition
+
+_sequence = count()
+"""Numbers each trigger as it is created, so triggers due at the same time keep their order."""
 
 
 @dataclass(order=True)
@@ -26,6 +30,11 @@ class TriggerData:
 
     execution_time: float = field(default=0.0)
     """The time at which the :ref:`Event` should run."""
+
+    sequence: int = field(default=0, init=False)
+    """The order this trigger was created in, which breaks a tie between triggers due at the
+    same time: the queues are priority queues, and without it two triggers stamped alike come
+    out in no particular order."""
 
     model: Any = field(init=False, compare=False)
     """A reference to the underlying model that holds the current :ref:`State`."""
@@ -47,6 +56,7 @@ class TriggerData:
         self.model = self.machine.model
         delay = self.event.delay if self.event and self.event.delay else 0
         self.execution_time = time() + (delay / 1000)
+        self.sequence = next(_sequence)
 
 
 @dataclass

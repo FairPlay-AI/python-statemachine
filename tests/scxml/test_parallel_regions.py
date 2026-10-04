@@ -9,6 +9,8 @@ Theme: the beacons, one of them already lit.
 import pytest
 from statemachine.io.scxml.processor import SCXMLProcessor
 
+pytestmark = pytest.mark.scxml
+
 BEACONS_SCXML = """
 <scxml initial="dark">
   <state id="dark">
@@ -27,7 +29,6 @@ BEACONS_SCXML = """
 """
 
 
-@pytest.mark.scxml()
 def test_a_region_with_a_targeted_state_does_not_also_enter_its_initial_state():
     processor = SCXMLProcessor()
     processor.parse_scxml("beacons", BEACONS_SCXML)

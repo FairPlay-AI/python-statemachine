@@ -226,7 +226,11 @@ class StateChart(Generic[TModel], metaclass=StateMachineMetaclass):
         return run_async_from_sync(result)
 
     def _processing_loop(self, caller_future: "Any | None" = None) -> Any:
-        result = self._engine.processing_loop(caller_future)
+        # Only the async engine gives an event a future, for its caller to await the result by.
+        if isinstance(self._engine, AsyncEngine):
+            result = self._engine.processing_loop(caller_future)
+        else:
+            result = self._engine.processing_loop()
         if not isawaitable(result):
             return result
         return run_async_from_sync(result)

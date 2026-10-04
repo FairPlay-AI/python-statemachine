@@ -9,6 +9,7 @@ Theme: Beacons of Gondor — signal fires propagate with timing.
 
 import asyncio
 import time
+from itertools import count
 
 import pytest
 from statemachine.engines import async_
@@ -164,3 +165,70 @@ class TestDelayedEvents:
         trigger = BoundEvent(id="light", name="Light", delay=delay, _sm=sm).put()
 
         assert trigger.execution_time == pytest.approx(due, abs=1e-9)
+
+    async def test_a_delayed_event_queued_from_a_callback_fires_when_due(
+        self, sm_runner, monkeypatch
+    ):
+        """The callback runs inside the processing loop, which then waits on the event it queued.
+
+        Every reading of the clock is 10 ms later than the last, so the beacon comes due after
+        a few turns of the loop however long each takes.
+        """
+
+        class BeaconsOfGondor(StateChart):
+            dark = State(initial=True)
+            first_lit = State()
+            all_lit = State(final=True)
+
+            light_first = dark.to(first_lit, after="spread")
+            light_all = first_lit.to(all_lit)
+
+            def spread(self):
+                BoundEvent(id="light_all", name="Light all", delay=50, _sm=self).put()
+
+        readings = count()
+        for module in _CLOCKS:
+            monkeypatch.setattr(f"{module}.monotonic", lambda: 1000.0 + next(readings) / 100)
+        sm = await sm_runner.start(BeaconsOfGondor)
+
+        await sm_runner.send(sm, "light_first")
+
+        assert sm.configuration_values == {"all_lit"}
+
+    @pytest.mark.parametrize(
+        "started",
+        [pytest.param(False, id="before-it-runs"), pytest.param(True, id="while-it-awaits")],
+    )
+    async def test_a_caller_that_stops_waiting_does_not_stop_its_delayed_event(
+        self, monkeypatch, started
+    ):
+        class Beacon(StateChart):
+            dark = State(initial=True)
+
+            signal = dark.to.itself(internal=True, on="flare")
+
+            def __init__(self, *args, **kwargs):
+                self.flares = []
+                super().__init__(*args, **kwargs)
+
+            async def flare(self, which):
+                self.flares.append(which)
+
+        now = [1000.0]
+        for module in _CLOCKS:
+            monkeypatch.setattr(f"{module}.monotonic", lambda: now[0])
+        sm = Beacon()
+        await sm.activate_initial_state()
+        holding = asyncio.create_task(sm.send("signal", delay=20, which="second"))
+        await asyncio.sleep(0)
+        waiting = asyncio.create_task(sm.send("signal", delay=10, which="first"))
+        if started:
+            await asyncio.sleep(0)
+
+        waiting.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiting
+        now[0] += 1.0
+        await holding
+
+        assert sm.flares == ["first", "second"]

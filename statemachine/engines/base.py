@@ -2,6 +2,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
+from heapq import heappop
 from itertools import chain
 from queue import PriorityQueue
 from queue import Queue
@@ -41,7 +42,13 @@ class EventQueue:
         return f"EventQueue({self.queue.queue!r}, size={self.queue.qsize()})"
 
     def is_empty(self):
-        return self.queue.qsize() == 0
+        """Whether the queue holds no trigger that has not been cancelled. Cancelled triggers at
+        the head are dropped first, so the :meth:`pop` that follows returns one that was not."""
+        with self.queue.mutex:
+            heap = self.queue.queue
+            while heap and heap[0].cancelled:
+                heappop(heap)
+            return not heap
 
     def put(self, trigger_data: TriggerData):
         """Put the trigger on the queue without blocking the caller."""
@@ -67,15 +74,17 @@ class EventQueue:
                 if future is not None and not future.done():
                     future.set_exception(exc)
 
-    def remove(self, send_id: str):
-        # We use the internal `queue` to make thins faster as the mutex
-        # is protecting the block below
+    def cancel(self, send_id: str):
+        """Cancel every trigger with this ``send_id``, and answer a caller awaiting one with
+        ``None``. Each stays where it is, so the heap keeps its order, until :meth:`is_empty`
+        drops it from the head."""
         with self.queue.mutex:
-            self.queue.queue = [
-                trigger_data
-                for trigger_data in self.queue.queue
-                if trigger_data.send_id != send_id
-            ]
+            for trigger_data in self.queue.queue:
+                if trigger_data.send_id == send_id:
+                    trigger_data.cancelled = True
+                    future = trigger_data.future
+                    if future is not None and not future.done():
+                        future.set_result(None)
 
 
 _ERROR_EXECUTION = "error.execution"
@@ -130,7 +139,7 @@ class BaseEngine:
 
     def cancel_event(self, send_id: str):
         """Cancel the event with the given send_id."""
-        self.external_queue.remove(send_id)
+        self.external_queue.cancel(send_id)
 
     def _on_error_handler(self) -> "Callable[[Exception], None] | None":
         """Return a per-block error handler, or ``None``.

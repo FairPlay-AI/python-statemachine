@@ -53,6 +53,11 @@ class TriggerData:
     result (or exception), allowing the caller to ``await`` it.
     """
 
+    cancelled: bool = field(default=False, compare=False, init=False)
+    """Whether :meth:`~statemachine.StateChart.cancel_event` cancelled this trigger. A cancelled
+    trigger stays in its queue, so the triggers around it keep their due order, and is dropped
+    when it reaches the head."""
+
     def __post_init__(self):
         self.model = self.machine.model
         delay = self.event.delay if self.event and self.event.delay else 0

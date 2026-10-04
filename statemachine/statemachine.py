@@ -507,7 +507,10 @@ class StateChart(Generic[TModel], metaclass=StateMachineMetaclass):
         return self.send(event, *args, delay=delay, send_id=send_id, internal=True, **kwargs)
 
     def cancel_event(self, send_id: str):
-        """Cancel all the delayed events with the given ``send_id``."""
+        """Cancel all the delayed events with the given ``send_id``.
+
+        A caller awaiting one of them gets ``None``.
+        """
         self._engine.cancel_event(send_id)
 
     @property

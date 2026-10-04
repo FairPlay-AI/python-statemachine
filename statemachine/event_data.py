@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from dataclasses import field
 from itertools import count
-from time import time
+from time import monotonic
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -29,7 +29,8 @@ class TriggerData:
     """
 
     execution_time: float = field(default=0.0)
-    """The time at which the :ref:`Event` should run."""
+    """The time at which the :ref:`Event` should run, on the :func:`time.monotonic` clock, so
+    that a step of the wall clock neither holds nor hastens it."""
 
     sequence: int = field(default=0, init=False)
     """The order this trigger was created in, which breaks a tie between triggers due at the
@@ -55,7 +56,7 @@ class TriggerData:
     def __post_init__(self):
         self.model = self.machine.model
         delay = self.event.delay if self.event and self.event.delay else 0
-        self.execution_time = time() + (delay / 1000)
+        self.execution_time = monotonic() + (delay / 1000)
         self.sequence = next(_sequence)
 
 

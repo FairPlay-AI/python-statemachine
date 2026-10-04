@@ -97,3 +97,32 @@ class TestDelayedEvents:
         await asyncio.sleep(0.1)
         await sm_runner.processing_loop(sm)
         assert "lit" in sm.configuration_values
+
+    async def test_delay_is_measured_on_the_monotonic_clock(self, sm_runner, monkeypatch):
+        """A delay comes due by ``time.monotonic``, which a wall-clock step cannot move.
+
+        The trigger is stamped and checked on the same monotonic clock: here a fake one that
+        moves only when the test moves it. A stamp on one clock checked against another would
+        hold the beacon unlit.
+        """
+
+        class BeaconsOfGondor(StateChart):
+            dark = State(initial=True)
+            lit = State(final=True)
+
+            light = dark.to(lit)
+
+        now = [1000.0]
+        for module in (
+            "statemachine.event_data",
+            "statemachine.engines.sync",
+            "statemachine.engines.async_",
+        ):
+            monkeypatch.setattr(f"{module}.monotonic", lambda: now[0])
+        sm = await sm_runner.start(BeaconsOfGondor)
+        BoundEvent(id="light", name="Light", delay=50, _sm=sm).put()
+        now[0] += 0.05
+
+        await sm_runner.processing_loop(sm)
+
+        assert "lit" in sm.configuration_values

@@ -2,7 +2,7 @@ import asyncio
 import contextvars
 from collections.abc import Callable
 from itertools import chain
-from time import time
+from time import monotonic
 from typing import TYPE_CHECKING
 
 from ..event_data import EventData
@@ -426,7 +426,7 @@ class AsyncEngine(BaseEngine):
                     self.clear_cache()
                     took_events = True
                     external_event = self.external_queue.pop()
-                    current_time = time()
+                    current_time = monotonic()
                     if external_event.execution_time > current_time:
                         self.put(external_event, _delayed=True)
                         await asyncio.sleep(self.sm._loop_sleep_in_ms)

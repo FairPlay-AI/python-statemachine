@@ -1,5 +1,5 @@
+from time import monotonic
 from time import sleep
-from time import time
 from typing import TYPE_CHECKING
 
 from statemachine.event import BoundEvent
@@ -132,7 +132,7 @@ class SyncEngine(BaseEngine):
                     self.clear_cache()
                     took_events = True
                     external_event = self.external_queue.pop()
-                    current_time = time()
+                    current_time = monotonic()
                     if external_event.execution_time > current_time:
                         self.put(external_event, _delayed=True)
                         sleep(self.sm._loop_sleep_in_ms)

@@ -35,7 +35,7 @@ class Muster(StateChart):
 @pytest.fixture()
 def one_moment(monkeypatch):
     """Stamp every trigger with the same time."""
-    monkeypatch.setattr("statemachine.event_data.time", lambda: 1000.0)
+    monkeypatch.setattr("statemachine.event_data.monotonic", lambda: 1000.0)
 
 
 @pytest.mark.timeout(10)
